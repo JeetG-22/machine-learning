@@ -6,7 +6,6 @@ import superimport
 
 import numpy as np
 import matplotlib.pyplot as plt
-import pyprobml_utils as pml
 
 
 import torch
@@ -22,17 +21,17 @@ transform=transforms.Compose([lambda img: torchvision.transforms.functional.rota
                                 transforms.ToTensor()])
 
 training_data = datasets.EMNIST(
-    root="~/data",
-    split="byclass",
+    root="./data",
+    split="balanced",
     download=True,
     transform=transform
 )
 
 figure = plt.figure(figsize=(10, 10))
-cols, rows = 5, 5
+cols, rows = int(input("Input # Of Columns: ")), 5
 for i in range(1, cols * rows + 1):
-    #sample_idx = torch.randint(len(training_data), size=(1,)).item()
-    sample_idx = i
+    sample_idx = torch.randint(len(training_data), size=(1,)).item()
+    # sample_idx = i
     img, label = training_data[sample_idx]
     figure.add_subplot(rows, cols, i)
     label = training_data.classes[label]
@@ -43,5 +42,4 @@ for i in range(1, cols * rows + 1):
     plt.imshow(img.squeeze(), cmap=plt.cm.binary)
 
 plt.tight_layout()
-pml.savefig("emnist-data.pdf")
 plt.show()

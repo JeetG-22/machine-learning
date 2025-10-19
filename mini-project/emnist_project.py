@@ -4,6 +4,7 @@ import torch
 import torchvision
 from torchvision import datasets
 from torchvision import transforms
+from sklearn.model_selection import train_test_split
 
 data_transform = torchvision.transforms.Compose([
     torchvision.transforms.ToTensor()])
@@ -20,7 +21,7 @@ def get_data(data, indices=None, binarize=True):
   return X, y
 
 data = datasets.EMNIST(
-    root="~/data",
+    root=f"./data",
     split="balanced",
     download=True,
     transform=data_transform
