@@ -3,21 +3,23 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 
 class CategoricalNaiveBayes(BaseEstimator, ClassifierMixin):
     """
-    Categorical Naive Bayes classifier for binary features (EMNIST).
+    Categorical Naive Bayes for EMNIST digit/letter classification.
     
-    Based on Lecture 2 (Naive Bayes) and Lecture 3 (Bayesian Learning)
+    This is based on what we learned in Lecture 2 and 3 about:
+    - Naive Bayes (assumes pixels are independent given the class)
+    - MLE vs MAP (with vs without priors)
     
     Parameters:
     -----------
     alpha : float, default=1.0
-        Dirichlet prior for class distribution (Lecture 3: Dir(α,...,α))
-        Higher α = more smoothing toward uniform class distribution
+        Prior for class probabilities (from Lecture 3 - Dirichlet)
+        Think of it as "fake counts" we add to each class
     beta : float, default=1.0
-        Beta prior for pixel probabilities (Lecture 3: Beta(β,β))
-        Higher β = more smoothing toward 0.5 for each pixel
+        Prior for pixel probabilities (from Lecture 3 - Beta)
+        Helps smooth pixel probabilities, prevents zeros
     method : str, default='MAP'
-        'MLE' = Maximum Likelihood (Lecture 2)
-        'MAP' = Maximum A Posteriori (Lecture 3)
+        'MLE' = no priors (Lecture 2)
+        'MAP' = with priors (Lecture 3)
     """
     
     def __init__(self, alpha=1.0, beta=1.0, method='MAP'):
@@ -27,304 +29,302 @@ class CategoricalNaiveBayes(BaseEstimator, ClassifierMixin):
         
     def fit(self, X, y):
         """
-        Learn model parameters from training data.
+        Train the model on data.
         
-        From Lecture 2: We model p(x, y) = p(x|y) * p(y)
-        - p(y) = class prior (which character is it?)
-        - p(x|y) = likelihood (what pixels light up given the character?)
+        From Lecture 2: We're learning p(x, y) = p(x|y) * p(y)
+        - p(y) = how common each class is
+        - p(x|y) = what the images look like for each class
         """
-        # Flatten images if needed: (n_samples, 28, 28) -> (n_samples, 784)
+        # Make sure data is flat (not 28x28 images)
         if X.ndim > 2:
-            n_samples = X.shape[0]
-            X = X.reshape(n_samples, -1)
+            num_samples = X.shape[0]
+            X = X.reshape(num_samples, -1)
         
-        # Store dimensions
-        self.n_features_ = X.shape[1]  # 784 pixels
-        self.classes_ = np.unique(y)    # [0, 1, 2, ..., 46] for EMNIST balanced
-        self.n_classes_ = len(self.classes_)  # 47 classes
+        # Figure out what we're working with
+        self.n_features_ = X.shape[1]  # Should be 784 (28*28)
+        self.classes = np.unique(y)  # All the different classes
+        self.n_classes = len(self.classes)  # Should be 47 for EMNIST
         
-        # Step 1: Compute class probabilities π_c = P(y = c)
-        # Lecture 3: Using either MLE or MAP with Dirichlet prior
+        # Step 1: Learn class probabilities
+        # From Lecture 3: this is either MLE or MAP
         if self.method == 'MLE':
-            self.class_log_prior_ = self._compute_class_prior_mle(y)
-        else:  # MAP
-            self.class_log_prior_ = self._compute_class_prior_map(y)
+            self.class_log_prior_ = self.class_prior_mle(y)
+        else:
+            self.class_log_prior_ = self.class_prior_map(y)
         
-        # Step 2: Compute pixel probabilities θ_{d,c} = P(pixel_d = 1 | y = c)
-        # Lecture 2: Naive Bayes assumes pixels are independent given class
+        # Step 2: Learn pixel probabilities for each class
+        # From Lecture 2: Naive Bayes assumes pixels are independent
         if self.method == 'MLE':
-            self.feature_log_prob_ = self._compute_pixel_prob_mle(X, y)
-        else:  # MAP
-            self.feature_log_prob_ = self._compute_pixel_prob_map(X, y)
+            self.feature_log_prob_ = self.pixel_prob_mle(X, y)
+        else:
+            self.feature_log_prob_ = self.pixel_prob_map(X, y)
         
         return self
     
-    def _compute_class_prior_mle(self, y):
+    def class_prior_mle(self, y):
         """
-        MLE for class probabilities.
-        
-        From Lecture 2: π_c^{MLE} = N_c / N
-        where N_c = number of samples in class c
-        """
-        # Count how many samples belong to each class
-        class_counts = np.zeros(self.n_classes_)
-        for idx, c in enumerate(self.classes_):
-            class_counts[idx] = np.sum(y == c)  # Count samples where y == c
-        
-        # MLE: just divide by total number of samples
-        total_samples = len(y)
-        class_prob = class_counts / total_samples
-        
-        # Return log probabilities (numerical stability - Lecture 1)
-        return np.log(class_prob)
-    
-    def _compute_class_prior_map(self, y):
-        """
-        MAP for class probabilities with Dirichlet prior.
-        
-        From Lecture 3: 
-        Prior: π ~ Dir(α, α, ..., α)
-        Posterior: π | D ~ Dir(α + N_0, α + N_1, ..., α + N_{C-1})
-        MAP (mode): π_c = (N_c + α - 1) / (N + C*α - C)
-        """
-        # Count samples per class
-        class_counts = np.zeros(self.n_classes_)
-        for idx, c in enumerate(self.classes_):
-            class_counts[idx] = np.sum(y == c)
-        
-        # MAP estimate with Dirichlet prior
-        # Think of α as "pseudo-counts" we add to each class
-        numerator = class_counts + self.alpha - 1
-        denominator = len(y) + self.n_classes_ * self.alpha - self.n_classes_
-        
-        class_prob = numerator / denominator
-        
-        return np.log(class_prob)
-    
-    def _compute_pixel_prob_mle(self, X, y):
-        """
-        MLE for pixel probabilities.
+        MLE: just count how often each class appears.
         
         From Lecture 2:
-        For Bernoulli distribution: θ^{MLE} = N_1 / (N_0 + N_1)
-        
-        For each pixel d and class c:
-        θ_{d,c}^{MLE} = (# times pixel d is 1 in class c) / (# samples in class c)
+        pi_c = (# of times we see class c) / (total # of samples)
         """
-        # Initialize: one probability for each (class, pixel) pair
-        pixel_prob = np.zeros((self.n_classes_, self.n_features_))
+        # Count samples in each class
+        counts = np.zeros(self.n_classes)
+        for i, c in enumerate(self.classes):
+            counts[i] = np.sum(y == c)
         
-        # For each class, compute pixel probabilities
-        for idx, c in enumerate(self.classes_):
-            # Get all training images from this class
-            X_c = X[y == c]  # Shape: (N_c, 784)
-            
-            # MLE: θ_{d,c} = (sum of pixel d values) / (number of samples)
-            # Since pixels are binary, mean = fraction of 1s
-            pixel_prob[idx, :] = np.mean(X_c, axis=0)
-            
-            # Avoid log(0) errors by clipping to small values
-            # This prevents -inf when taking log later
-            pixel_prob[idx, :] = np.clip(pixel_prob[idx, :], 1e-10, 1 - 1e-10)
+        # Calculate probabilities (just divide by total)
+        total = len(y)
+        probs = counts / total
         
-        return np.log(pixel_prob)
+        # Return as log (more stable for computation)
+        return np.log(probs)
     
-    def _compute_pixel_prob_map(self, X, y):
+    def class_prior_map(self, y):
         """
-        MAP for pixel probabilities with Beta prior.
+        MAP: like MLE but with a prior (smoothing).
         
         From Lecture 3:
-        Prior: θ_{d,c} ~ Beta(β, β)
-        Posterior: θ_{d,c} | D ~ Beta(β + N_{dc1}, β + N_{dc0})
-        MAP (mode): θ_{d,c} = (N_{dc1} + β - 1) / (N_c + 2β - 2)
+        We start with a Dirichlet prior: Dir(alpha, alpha, ..., alpha)
+        After seeing data, posterior is: Dir(alpha + N_0, alpha + N_1, ...)
+        MAP estimate (the mode): pi_c = (N_c + alpha - 1) / (N + C*alpha - C)
         
-        where N_{dc1} = count of 1s for pixel d in class c
-              N_{dc0} = count of 0s for pixel d in class c
-              N_c = N_{dc1} + N_{dc0}
+        The alpha acts like "fake counts" we had before seeing any data
         """
-        # Initialize pixel probabilities
-        pixel_prob = np.zeros((self.n_classes_, self.n_features_))
+        # Count samples in each class
+        counts = np.zeros(self.n_classes)
+        for i, c in enumerate(self.classes):
+            counts[i] = np.sum(y == c)
         
-        for idx, c in enumerate(self.classes_):
-            # Get all training images from this class
-            X_c = X[y == c]  # Shape: (N_c, 784)
-            n_samples_c = X_c.shape[0]  # N_c
-            
-            # Count how many times each pixel is 1
-            count_ones = np.sum(X_c, axis=0)  # N_{dc1} for each pixel d
-            
-            # MAP with Beta prior
-            # Think of β as "pseudo-observations" we add
-            # β = 2 means we've seen 1 "on" and 1 "off" before seeing data
-            numerator = count_ones + self.beta - 1
-            denominator = n_samples_c + 2 * self.beta - 2
-            
-            pixel_prob[idx, :] = numerator / denominator
-            
-            # Still clip for safety (though MAP rarely hits 0 or 1)
-            pixel_prob[idx, :] = np.clip(pixel_prob[idx, :], 1e-10, 1 - 1e-10)
+        # Add the prior (alpha - 1 to each class)
+        numerator = counts + self.alpha - 1
+        # Total is: actual data + all the fake counts
+        denominator = len(y) + self.n_classes * self.alpha - self.n_classes
         
-        return np.log(pixel_prob)
+        probs = numerator / denominator
+        
+        return np.log(probs)
+    
+    def pixel_prob_mle(self, X, y):
+        """
+        MLE for pixels: what's the probability each pixel is "on"?
+        
+        From Lecture 2 (Bernoulli MLE):
+        theta = (# times pixel is 1) / (# total times we see that class)
+        
+        We do this for every pixel and every class
+        """
+        # Make array to store: (47 classes) x (784 pixels)
+        pixel_probs = np.zeros((self.n_classes, self.n_features_))
+        
+        # For each class
+        for i, c in enumerate(self.classes):
+            # Get all images from this class
+            X_class = X[y == c]
+            
+            # For each pixel, what fraction of the time is it "on"?
+            # mean works because pixels are 0 or 1
+            pixel_probs[i, :] = np.mean(X_class, axis=0)
+            
+            # Problem: if a pixel is ALWAYS off, we get 0, then log(0) = -inf
+            # Solution: clip to very small values
+            pixel_probs[i, :] = np.clip(pixel_probs[i, :], 1e-10, 1 - 1e-10)
+        
+        return np.log(pixel_probs)
+    
+    def pixel_prob_map(self, X, y):
+        """
+        MAP for pixels: MLE but with smoothing from Beta prior.
+        
+        From Lecture 3 (Beta-Bernoulli):
+        Prior: theta ~ Beta(B, B)
+        Posterior: theta | data ~ Beta(B + # of 1s, B + # of 0s)
+        MAP estimate: theta = (# of 1s + B - 1) / (# total + 2B - 2)
+        
+        This prevents us from getting 0 probabilities!
+        """
+        # Same setup as MLE
+        pixel_probs = np.zeros((self.n_classes, self.n_features_))
+        
+        for i, c in enumerate(self.classes):
+            # Get images from this class
+            X_class = X[y == c]
+            num_in_class = X_class.shape[0]
+            
+            # Count how many times each pixel is "on" (= 1)
+            ones_count = np.sum(X_class, axis=0)
+            
+            # Apply MAP formula
+            # B - 1 is like adding "fake observations" before seeing data
+            numerator = ones_count + self.beta - 1
+            denominator = num_in_class + 2 * self.beta - 2
+            
+            pixel_probs[i, :] = numerator / denominator
+            
+            # Still clip just to be safe
+            pixel_probs[i, :] = np.clip(pixel_probs[i, :], 1e-10, 1 - 1e-10)
+        
+        return np.log(pixel_probs)
     
     def predict(self, X):
         """
-        Predict class labels for test samples.
+        Predict which class each test image belongs to.
         
-        From Lecture 2: Use Bayes' Rule
-        ŷ = argmax_c p(y = c | x)
-          = argmax_c p(x | y = c) * p(y = c)  [drop p(x) since same for all c]
-          = argmax_c log p(x, y = c)  [work in log space]
+        From Lecture 2: Use Bayes Rule
+        Pick class c that maximizes: p(y=c|x) ∝ p(x|y=c) * p(y=c)
+        
+        In log space: log p(x,y=c) = log p(y=c) + log p(x|y=c)
         """
-        # Flatten images if needed
+        # Flatten if needed
         if X.ndim > 2:
-            n_samples = X.shape[0]
-            X = X.reshape(n_samples, -1)
+            num_samples = X.shape[0]
+            X = X.reshape(num_samples, -1)
         
-        # Compute log p(x, y = c) for all classes
+        # Calculate log probability for each class
         log_probs = self._joint_log_likelihood(X)
         
-        # Pick class with highest probability
-        class_indices = np.argmax(log_probs, axis=1)
-        return self.classes_[class_indices]
+        # Pick the class with highest probability
+        best_class_idx = np.argmax(log_probs, axis=1)
+        return self.classes[best_class_idx]
     
     def _joint_log_likelihood(self, X):
         """
-        Compute log p(x, y = c) for each class c.
+        Calculate log p(x, y=c) for every class c.
         
         From Lecture 2 (Naive Bayes):
-        p(x, y = c) = p(y = c) * p(x | y = c)
-                    = π_c * ∏_{d=1}^{784} θ_{d,c}^{x_d} * (1-θ_{d,c})^{1-x_d}
+        p(x, y=c) = p(y=c) * ∏ p(pixel_d | y=c) for all pixels d
         
-        In log space:
-        log p(x, y = c) = log π_c + Σ_{d=1}^{784} [x_d*log(θ_{d,c}) + (1-x_d)*log(1-θ_{d,c})]
+        In log space (from Lecture 1 - avoid underflow):
+        log p(x, y=c) = log p(y=c) + Σ log p(pixel_d | y=c)
+        
+        For each pixel:
+        - If pixel is 1: add log(theta)
+        - If pixel is 0: add log(1-theta)
         """
-        n_samples = X.shape[0]
-        log_probs = np.zeros((n_samples, self.n_classes_))
+        num_samples = X.shape[0]
+        log_probs = np.zeros((num_samples, self.n_classes))
         
         # For each class
-        for idx in range(self.n_classes_):
-            # Start with class prior: log p(y = c)
-            log_probs[:, idx] = self.class_log_prior_[idx]
+        for c_idx in range(self.n_classes):
+            # Start with: log p(y = c)
+            log_probs[:, c_idx] = self.class_log_prior_[c_idx]
             
-            # Add likelihood: log p(x | y = c)
-            # For each pixel: if pixel is 1, add log(θ), if 0, add log(1-θ)
+            # Now add: log p(x | y = c)
+            # This is the Naive Bayes part - assume pixels independent
             
-            # Get log probabilities for this class
-            log_theta = self.feature_log_prob_[idx, :]  # log(θ_{d,c}) for all pixels
-            log_one_minus_theta = np.log(1 - np.exp(log_theta))  # log(1 - θ_{d,c})
+            # Get the pixel probabilities for this class
+            log_theta = self.feature_log_prob_[c_idx, :]  # log P(pixel=1)
+            log_one_minus_theta = np.log(1 - np.exp(log_theta))  # log P(pixel=0)
             
-            # For each sample, sum contributions from all pixels
-            # Naive Bayes: pixels are independent given class
-            for n in range(n_samples):
-                # When pixel is 1: add log(θ)
-                # When pixel is 0: add log(1-θ)
-                contribution = X[n] * log_theta + (1 - X[n]) * log_one_minus_theta
-                log_probs[n, idx] += np.sum(contribution)
+            # For each test sample
+            for n in range(num_samples):
+                # Add up contributions from all pixels
+                # If pixel is 1, use log_theta; if 0, use log_one_minus_theta
+                pixel_contribution = X[n] * log_theta + (1 - X[n]) * log_one_minus_theta
+                log_probs[n, c_idx] += np.sum(pixel_contribution)
         
         return log_probs
     
     def score(self, X, y):
         """
-        Compute average log-likelihood of the data.
+        Calculate average log-likelihood of the data.
         
-        Score = (1/N) × Σ log p(x_n, y_n | θ)
+        From project: Score = (1/N) * Σ log p(x_n, y_n)
         
-        Parameters:
-        -----------
-        X : array-like, shape (n_samples, n_features)
-        y : array-like, shape (n_samples,)
-            
-        Returns:
-        --------
-        score : float
-            Average log-likelihood
+        Higher score = model fits data better
         """
-        # Reshape if needed
+        # Flatten if needed
         if X.ndim > 2:
-            n_samples = X.shape[0]
-            X = X.reshape(n_samples, -1)
+            num_samples = X.shape[0]
+            X = X.reshape(num_samples, -1)
         
-        # Get joint log likelihoods for all classes
+        # Get probabilities for all classes
         log_probs = self._joint_log_likelihood(X)
         
-        # For each sample, get the log probability of the true class
-        log_likelihood = []
-        for i, true_label in enumerate(y):
-            # Check if this class was in the training data
-            class_idx_array = np.where(self.classes_ == true_label)[0]
+        # For each sample, get probability of its TRUE class
+        log_likelihoods = []
+        for i, true_class in enumerate(y):
+            # Find where this class is in our classes array
+            where_class = np.where(self.classes == true_class)[0]
             
-            if len(class_idx_array) > 0:
-                # Class was seen during training - use its probability
-                class_idx = class_idx_array[0]
-                log_likelihood.append(log_probs[i, class_idx])
+            if len(where_class) > 0:
+                # We've seen this class before - use its probability
+                class_idx = where_class[0]
+                log_likelihoods.append(log_probs[i, class_idx])
             else:
-                # Class was NOT seen during training
-                # Assign very low log probability (equivalent to near-zero probability)
-                # From Lecture 3: unseen events should have low but non-zero probability
-                log_likelihood.append(-1000)  # Very low log probability
+                # We never saw this class in training!
+                # From Lecture 3: assign very low (but not zero) probability
+                log_likelihoods.append(-1000)
         
-        # Return average log-likelihood
-        return np.mean(log_likelihood)
+        # Return the average
+        return np.mean(log_likelihoods)
 
-# Test the implementation
+
+# Testing the implementation
 if __name__ == "__main__":
     print("=" * 60)
-    print("Testing Categorical Naive Bayes Implementation")
+    print("Testing my Naive Bayes Implementation")
     print("=" * 60)
     
-    # Load data (from your emnist_project.py)
+    # Load the data
     from emnist_project import X_train, X_test, y_train, y_test
     
-    # Flatten images: (n_samples, 28, 28) -> (n_samples, 784)
+    # Flatten the images
     X_train_flat = X_train.reshape(X_train.shape[0], -1).astype(float)
     X_test_flat = X_test.reshape(X_test.shape[0], -1).astype(float)
     
-    print(f"\nDataset Info:")
-    print(f"  Training samples: {X_train_flat.shape[0]}")
-    print(f"  Test samples: {X_test_flat.shape[0]}")
-    print(f"  Features (pixels): {X_train_flat.shape[1]}")
+    print(f"\nDataset:")
+    print(f"  Training: {X_train_flat.shape[0]} samples")
+    print(f"  Testing: {X_test_flat.shape[0]} samples")
+    print(f"  Features: {X_train_flat.shape[1]} pixels")
     print(f"  Classes: {len(np.unique(y_train))}")
     
-    # Train MLE model
+    # Train MLE version (no priors)
     print("\n" + "-" * 60)
-    print("Training MLE Model (no regularization)...")
-    print("-" * 60)
+    print("Training MLE model...")
     model_mle = CategoricalNaiveBayes(alpha=1.0, beta=1.0, method='MLE')
     model_mle.fit(X_train_flat, y_train)
+    print("Done!")
     
-    # Train MAP model
-    print("\nTraining MAP Model (with Bayesian priors)...")
-    print("-" * 60)
+    # Train MAP version (with priors)
+    print("\nTraining MAP model...")
     model_map = CategoricalNaiveBayes(alpha=1.0, beta=1.0, method='MAP')
     model_map.fit(X_train_flat, y_train)
+    print("Done!")
     
     # Make predictions
-    print("\nMaking predictions...")
+    print("\nTesting predictions...")
     y_pred_mle = model_mle.predict(X_test_flat)
     y_pred_map = model_map.predict(X_test_flat)
     
-    # Evaluate accuracy
+    # Check accuracy
     from sklearn.metrics import accuracy_score
     acc_mle = accuracy_score(y_test, y_pred_mle)
     acc_map = accuracy_score(y_test, y_pred_map)
     
     print("\n" + "=" * 60)
-    print("RESULTS")
+    print("Results:")
     print("=" * 60)
     print(f"MLE Accuracy: {acc_mle:.4f}")
     print(f"MAP Accuracy: {acc_map:.4f}")
     
-    # Get scores (average log-likelihood)
-    score_train_mle = model_mle.score(X_train_flat, y_train)
-    score_test_mle = model_mle.score(X_test_flat, y_test)
-    score_train_map = model_map.score(X_train_flat, y_train)
-    score_test_map = model_map.score(X_test_flat, y_test)
+    # Get log-likelihood scores
+    print("\nScoring models (higher = better)...")
+    train_score_mle = model_mle.score(X_train_flat, y_train)
+    test_score_mle = model_mle.score(X_test_flat, y_test)
+    train_score_map = model_map.score(X_train_flat, y_train)
+    test_score_map = model_map.score(X_test_flat, y_test)
     
-    print(f"\nMLE - Training Score: {score_train_mle:.4f}")
-    print(f"MLE - Test Score:     {score_test_mle:.4f}")
-    print(f"MAP - Training Score: {score_train_map:.4f}")
-    print(f"MAP - Test Score:     {score_test_map:.4f}")
+    print(f"\nMLE:")
+    print(f"  Training score:   {train_score_mle:.4f}")
+    print(f"  Test score:       {test_score_mle:.4f}")
+    print(f"  Gap (overfitting?): {train_score_mle - test_score_mle:.4f}")
     
-    print("\nNote: Higher scores = better fit")
-    print("If training score >> test score, we're overfitting!")
+    print(f"\nMAP:")
+    print(f"  Training score:   {train_score_map:.4f}")
+    print(f"  Test score:       {test_score_map:.4f}")
+    print(f"  Gap (overfitting?): {train_score_map - test_score_map:.4f}")
+    
+    print("\nFrom Lecture 2: Big gap = overfitting!")
+    print("From Lecture 3: MAP should have smaller gap than MLE")
     print("=" * 60)
