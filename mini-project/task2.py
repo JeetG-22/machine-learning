@@ -227,32 +227,44 @@ class CategoricalNaiveBayes(BaseEstimator, ClassifierMixin):
         """
         Compute average log-likelihood of the data.
         
-        From project description:
-        Score = (1/N) * Σ_n log p(x_n, y_n | θ)
+        Score = (1/N) × Σ log p(x_n, y_n | θ)
         
-        Higher score = better fit to data
-        Used to compare MLE vs MAP and detect overfitting
+        Parameters:
+        -----------
+        X : array-like, shape (n_samples, n_features)
+        y : array-like, shape (n_samples,)
+            
+        Returns:
+        --------
+        score : float
+            Average log-likelihood
         """
-        # Flatten images if needed
+        # Reshape if needed
         if X.ndim > 2:
             n_samples = X.shape[0]
             X = X.reshape(n_samples, -1)
         
-        # Get log probabilities for all classes
-        log_probs = self._joint_log_likelihood(X)  # Shape: (n_samples, n_classes)
+        # Get joint log likelihoods for all classes
+        log_probs = self._joint_log_likelihood(X)
         
-        # For each sample, extract the log probability of its TRUE class
-        log_likelihood_per_sample = []
-        for n in range(len(y)):
-            true_label = y[n]
-            # Find which class index corresponds to this label
-            class_idx = np.where(self.classes_ == true_label)[0][0]
-            # Get log p(x_n, y_n = true_label)
-            log_likelihood_per_sample.append(log_probs[n, class_idx])
+        # For each sample, get the log probability of the true class
+        log_likelihood = []
+        for i, true_label in enumerate(y):
+            # Check if this class was in the training data
+            class_idx_array = np.where(self.classes_ == true_label)[0]
+            
+            if len(class_idx_array) > 0:
+                # Class was seen during training - use its probability
+                class_idx = class_idx_array[0]
+                log_likelihood.append(log_probs[i, class_idx])
+            else:
+                # Class was NOT seen during training
+                # Assign very low log probability (equivalent to near-zero probability)
+                # From Lecture 3: unseen events should have low but non-zero probability
+                log_likelihood.append(-1000)  # Very low log probability
         
         # Return average log-likelihood
-        return np.mean(log_likelihood_per_sample)
-
+        return np.mean(log_likelihood)
 
 # Test the implementation
 if __name__ == "__main__":
