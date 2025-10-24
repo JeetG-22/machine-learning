@@ -11,8 +11,11 @@ print(f"Training samples: {X_train_flat.shape[0]}")
 print(f"Test samples: {X_test_flat.shape[0]}")
 
 
-"""Creates an imbalanced dataset using Dirichlet distribution"""
 def create_imbalanced_dataset(X, y, total_size, alpha_class, random_state=42):
+    """
+    Creates an imbalanced dataset using Dirichlet distribution
+    Smaller alpha_class = more imbalanced
+    """
     np.random.seed(random_state)
     
     classes = np.unique(y)
@@ -39,7 +42,6 @@ def create_imbalanced_dataset(X, y, total_size, alpha_class, random_state=42):
         y_class = y[mask]
         
         if target_count > 0:
-            # sample with or without replacement
             if target_count <= len(X_class):
                 selected = np.random.choice(len(X_class), size=target_count, replace=False)
             else:
@@ -58,12 +60,12 @@ def create_imbalanced_dataset(X, y, total_size, alpha_class, random_state=42):
     
     return X_imbalanced, y_imbalanced, target_counts
 
-"""
-Generate learning curve for given hyperparameters
-Using fewer training sizes and CV folds for speed
-"""
+
 def learning_curve(alpha, beta, alpha_class, method='MAP'):
-    # Speed optimization: use only 3 training sizes instead of 5
+    """
+    Generate learning curve for given hyperparameters
+    Using 3 training sizes for speed
+    """
     train_sizes = np.array([0.1, 0.55, 1.0])  # start, middle, end
     
     train_scores = []
@@ -93,6 +95,7 @@ def learning_curve(alpha, beta, alpha_class, method='MAP'):
 
 
 def plot_class_distribution(class_counts, alpha_class):
+    """Show how imbalanced the classes are"""
     plt.figure(figsize=(14, 4))
     plt.bar(range(len(class_counts)), class_counts)
     plt.xlabel('Class Index', fontsize=12)
@@ -104,7 +107,7 @@ def plot_class_distribution(class_counts, alpha_class):
 
 
 # First let's see what the different imbalance levels look like
-print("\n")
+print("\n" + "=" * 70)
 print("Visualizing different imbalance levels...")
 print("=" * 70)
 
@@ -125,18 +128,18 @@ for alpha_class in [0.1, 1, 100]:
     plt.close()
 
 
-# Task 4.1: Fix alpha = 1, vary beta
-print("\n")
-print("Task 4.1: Testing beta with imbalanced data")
-print("Note: Using 3 training sizes instead of 5 for speed")
+# TASK 4.1: Fix alpha = 1, vary beta
+print("\n" + "=" * 70)
+print("TASK 4.1: Testing beta with imbalanced data")
+print("Note: Using 3 training sizes for speed optimization")
 print("=" * 70)
 
 alpha_fixed = 1.0
 betas_to_test = [1, 1.2, 2, 10, 100]
 alpha_class_values = [0.1, 0.2, 0.5, 1, 10, 100]  # all 6 levels
 
-# pre-compute MLE for all imbalance levels (reuse across both tasks)
-print("\nPre-computing MLE baselines...")
+# Pre-compute MLE for all imbalance levels
+print("\nPre-computing MLE baselines for comparison...")
 mle_cache = {}
 for alpha_class in alpha_class_values:
     train_scores_mle, val_scores_mle, sizes = learning_curve(
@@ -156,11 +159,15 @@ for alpha_class in alpha_class_values:
         print("  (mostly balanced)")
     print(f"{'='*70}")
     
+    # get MLE scores for this imbalance level
+    train_scores_mle, val_scores_mle, sizes = mle_cache[alpha_class]
+    
     # make grid of subplots
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
     axes = axes.ravel()
     
     results = {}
+    results['MLE'] = (train_scores_mle, val_scores_mle)
     
     # test each beta value
     for idx, beta in enumerate(betas_to_test):
@@ -175,37 +182,42 @@ for alpha_class in alpha_class_values:
         
         results[f'beta={beta}'] = (train_scores, val_scores)
         
-        # plot it
+        # plot MAP curves
         axes[idx].plot(sizes, train_scores, 'o-', 
-                      color='red', label='Training', linewidth=2, markersize=6)
+                      color='red', label='MAP Training', linewidth=2, markersize=6)
         axes[idx].plot(sizes, val_scores, 's-', 
-                      color='green', label='Validation', linewidth=2, markersize=6)
+                      color='green', label='MAP Validation', linewidth=2, markersize=6)
+        
+        # add MLE for comparison (dashed lines)
+        axes[idx].plot(sizes, train_scores_mle, 'o--', 
+                      color='orange', label='MLE Training', linewidth=2, markersize=4, alpha=0.7)
+        axes[idx].plot(sizes, val_scores_mle, 's--', 
+                      color='blue', label='MLE Validation', linewidth=2, markersize=4, alpha=0.7)
+        
         axes[idx].set_xlabel('Training Size', fontsize=10)
         axes[idx].set_ylabel('Score', fontsize=10)
         axes[idx].set_title(f'beta={beta}', fontsize=12, fontweight='bold')
-        axes[idx].legend(fontsize=9)
+        axes[idx].legend(fontsize=8)
         axes[idx].grid(True, alpha=0.3)
         
-        print(f"done (val score: {val_scores[-1]})")
+        print(f"done (val score: {val_scores[-1]:.4f})")
     
-    # use cached MLE results
-    train_scores_mle, val_scores_mle, _ = mle_cache[alpha_class]
-    results['MLE'] = (train_scores_mle, val_scores_mle)
-    print(f"  MLE: val score: {val_scores_mle[-1]}")
+    print(f"  MLE: val score: {val_scores_mle[-1]:.4f}")
     
-    # plot MLE
-    axes[5].plot(sizes, train_scores_mle, 'o-', 
-                color='red', label='Training', linewidth=2, markersize=6)
-    axes[5].plot(sizes, val_scores_mle, 's-', 
-                color='green', label='Validation', linewidth=2, markersize=6)
-    axes[5].set_xlabel('Training Size', fontsize=10)
-    axes[5].set_ylabel('Score', fontsize=10)
-    axes[5].set_title(f'MLE', fontsize=12, fontweight='bold')
-    axes[5].legend(fontsize=9)
-    axes[5].grid(True, alpha=0.3)
+    # use last subplot for legend
+    axes[5].text(0.5, 0.6, 'MLE vs MAP Comparison', 
+                 ha='center', va='center', fontsize=14, fontweight='bold',
+                 transform=axes[5].transAxes)
+    axes[5].text(0.5, 0.45, 'MLE (dashed) vs MAP (solid)', 
+                 ha='center', va='center', fontsize=11,
+                 transform=axes[5].transAxes)
+    axes[5].text(0.5, 0.35, 'shown on all subplots', 
+                 ha='center', va='center', fontsize=11,
+                 transform=axes[5].transAxes)
+    axes[5].axis('off')
     
     # save the grid
-    plt.suptitle(f'Task 4.1: beta with Imbalanced Data (alpha_class={alpha_class})', 
+    plt.suptitle(f'Task 4.1: beta with Imbalanced Data (alpha_class={alpha_class})\nMLE shown for comparison', 
                  fontsize=16, fontweight='bold')
     plt.tight_layout()
     plt.savefig(f'task4_1_beta_alpha_class_{alpha_class}.png', dpi=150, bbox_inches='tight')
@@ -217,7 +229,8 @@ for alpha_class in alpha_class_values:
     
     plt.subplot(1, 2, 1)
     for label, (train_scores, val_scores) in results.items():
-        plt.plot(sizes, train_scores, 'o-', label=label, linewidth=2, markersize=6)
+        linestyle = '--' if label == 'MLE' else '-'
+        plt.plot(sizes, train_scores, 'o' + linestyle, label=label, linewidth=2, markersize=6)
     plt.xlabel('Training Size', fontsize=12)
     plt.ylabel('Training Score', fontsize=12)
     plt.title(f'Training (alpha_class={alpha_class})', fontsize=13, fontweight='bold')
@@ -226,7 +239,8 @@ for alpha_class in alpha_class_values:
     
     plt.subplot(1, 2, 2)
     for label, (train_scores, val_scores) in results.items():
-        plt.plot(sizes, val_scores, 's-', label=label, linewidth=2, markersize=6)
+        linestyle = '--' if label == 'MLE' else '-'
+        plt.plot(sizes, val_scores, 's' + linestyle, label=label, linewidth=2, markersize=6)
     plt.xlabel('Training Size', fontsize=12)
     plt.ylabel('Validation Score', fontsize=12)
     plt.title(f'Validation (alpha_class={alpha_class})', fontsize=13, fontweight='bold')
@@ -240,9 +254,9 @@ for alpha_class in alpha_class_values:
     plt.close()
 
 
-# Task 4.2: Fix beta = 1, vary alpha
-print("\n")
-print("Task 4.2: Testing alpha with imbalanced data")
+# TASK 4.2: Fix beta = 1, vary alpha
+print("\n" + "=" * 70)
+print("TASK 4.2: Testing alpha with imbalanced data")
 print("=" * 70)
 
 beta_fixed = 1.0
@@ -253,10 +267,14 @@ for alpha_class in alpha_class_values:
     print(f"Testing with alpha_class = {alpha_class}")
     print(f"{'='*70}")
     
+    # get MLE scores for this imbalance level
+    train_scores_mle, val_scores_mle, sizes = mle_cache[alpha_class]
+    
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
     axes = axes.ravel()
     
     results = {}
+    results['MLE'] = (train_scores_mle, val_scores_mle)
     
     # test each alpha
     for idx, alpha in enumerate(alphas_to_test):
@@ -271,39 +289,44 @@ for alpha_class in alpha_class_values:
         
         results[f'alpha={alpha}'] = (train_scores, val_scores)
         
-        # plot
+        # plot MAP curves
         axes[idx].plot(sizes, train_scores, 'o-', 
-                      color='red', label='Training', linewidth=2, markersize=6)
+                      color='red', label='MAP Training', linewidth=2, markersize=6)
         axes[idx].plot(sizes, val_scores, 's-', 
-                      color='green', label='Validation', linewidth=2, markersize=6)
+                      color='green', label='MAP Validation', linewidth=2, markersize=6)
+        
+        # add MLE for comparison (dashed lines)
+        axes[idx].plot(sizes, train_scores_mle, 'o--', 
+                      color='orange', label='MLE Training', linewidth=2, markersize=4, alpha=0.7)
+        axes[idx].plot(sizes, val_scores_mle, 's--', 
+                      color='blue', label='MLE Validation', linewidth=2, markersize=4, alpha=0.7)
+        
         axes[idx].set_xlabel('Training Size', fontsize=10)
         axes[idx].set_ylabel('Score', fontsize=10)
         axes[idx].set_title(f'alpha={alpha}', fontsize=12, fontweight='bold')
-        axes[idx].legend(fontsize=9)
+        axes[idx].legend(fontsize=8)
         axes[idx].grid(True, alpha=0.3)
         
-        print(f"done (val score: {val_scores[-1]})")
+        print(f"done (val score: {val_scores[-1]:.4f})")
     
-    # use cached MLE
-    train_scores_mle, val_scores_mle, _ = mle_cache[alpha_class]
-    results['MLE'] = (train_scores_mle, val_scores_mle)
-    print(f"  MLE: val score: {val_scores_mle[-1]}")
+    print(f"  MLE: val score: {val_scores_mle[-1]:.4f}")
     
-    # plot MLE
-    axes[4].plot(sizes, train_scores_mle, 'o-', 
-                color='red', label='Training', linewidth=2, markersize=6)
-    axes[4].plot(sizes, val_scores_mle, 's-', 
-                color='green', label='Validation', linewidth=2, markersize=6)
-    axes[4].set_xlabel('Training Size', fontsize=10)
-    axes[4].set_ylabel('Score', fontsize=10)
-    axes[4].set_title(f'MLE', fontsize=12, fontweight='bold')
-    axes[4].legend(fontsize=9)
-    axes[4].grid(True, alpha=0.3)
+    # use remaining subplots for legend/notes
+    axes[4].text(0.5, 0.6, 'MLE vs MAP Comparison', 
+                 ha='center', va='center', fontsize=14, fontweight='bold',
+                 transform=axes[4].transAxes)
+    axes[4].text(0.5, 0.45, 'MLE (dashed) vs MAP (solid)', 
+                 ha='center', va='center', fontsize=11,
+                 transform=axes[4].transAxes)
+    axes[4].text(0.5, 0.35, 'shown on all subplots', 
+                 ha='center', va='center', fontsize=11,
+                 transform=axes[4].transAxes)
+    axes[4].axis('off')
     
     axes[5].axis('off')
     
     # save
-    plt.suptitle(f'Task 4.2: alpha with Imbalanced Data (alpha_class={alpha_class})', 
+    plt.suptitle(f'Task 4.2: alpha with Imbalanced Data (alpha_class={alpha_class})\nMLE shown for comparison', 
                  fontsize=16, fontweight='bold')
     plt.tight_layout()
     plt.savefig(f'task4_2_alpha_alpha_class_{alpha_class}.png', dpi=150, bbox_inches='tight')
@@ -315,7 +338,8 @@ for alpha_class in alpha_class_values:
     
     plt.subplot(1, 2, 1)
     for label, (train_scores, val_scores) in results.items():
-        plt.plot(sizes, train_scores, 'o-', label=label, linewidth=2, markersize=6)
+        linestyle = '--' if label == 'MLE' else '-'
+        plt.plot(sizes, train_scores, 'o' + linestyle, label=label, linewidth=2, markersize=6)
     plt.xlabel('Training Size', fontsize=12)
     plt.ylabel('Training Score', fontsize=12)
     plt.title(f'Training (alpha_class={alpha_class})', fontsize=13, fontweight='bold')
@@ -324,7 +348,8 @@ for alpha_class in alpha_class_values:
     
     plt.subplot(1, 2, 2)
     for label, (train_scores, val_scores) in results.items():
-        plt.plot(sizes, val_scores, 's-', label=label, linewidth=2, markersize=6)
+        linestyle = '--' if label == 'MLE' else '-'
+        plt.plot(sizes, val_scores, 's' + linestyle, label=label, linewidth=2, markersize=6)
     plt.xlabel('Training Size', fontsize=12)
     plt.ylabel('Validation Score', fontsize=12)
     plt.title(f'Validation (alpha_class={alpha_class})', fontsize=13, fontweight='bold')
@@ -341,10 +366,11 @@ for alpha_class in alpha_class_values:
 print("\n" + "=" * 70)
 print("Task 4 Complete!")
 print("\nSpeed optimizations used:")
-print("  - 3 training sizes instead of 5 to make it faster")
-print("  - I Cached MLE results (avoids redundant computation)")
+print("  - I used 3 training sizes instead of 5 to make it faster")
+print("  - I cached MLE results (avoids redundant computation)")
 print("\nGenerated files:")
 print("  - task4_class_dist_alpha*.png (3 files)")
-print("  - task4_1_*.png (12 files for all 6 imbalance levels)")
-print("  - task4_2_*.png (12 files for all 6 imbalance levels)")
+print("  - task4_1_*.png (12 files - 6 grids + 6 comparisons)")
+print("  - task4_2_*.png (12 files - 6 grids + 6 comparisons)")
+print("  Total: 27 plots with MLE comparison on every subplot")
 print("=" * 70)
