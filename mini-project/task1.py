@@ -25,7 +25,7 @@ training_data = datasets.EMNIST(
     transform=transform
 )
 
-# Organize samples by class
+# organize samples by class
 print("Organizing samples by class...")
 samples_by_class = {}
 for idx in range(len(training_data)):
@@ -34,19 +34,19 @@ for idx in range(len(training_data)):
         samples_by_class[label] = []
     samples_by_class[label].append(idx)
 
-# Task 1: 5 rows x C columns (where C=47)
+# task 1: 5 rows x C columns 
 rows = 5
 cols = len(training_data.classes)  # 47 classes
 
 figure = plt.figure(figsize=(cols * 0.7, rows * 0.7))
 
-# For each position in the grid
+# for each position in the grid
 for i in range(1, cols * rows + 1):
-    # Calculate which class (column) and which sample (row)
+    # calculate which class (column) and which sample (row)
     col = (i - 1) % cols  # class ID
     row = (i - 1) // cols  # sample number for this class
     
-    # Get a random sample from this specific class
+    # get a random sample from this specific class
     class_samples = samples_by_class[col]
     sample_idx = np.random.choice(class_samples)
     
@@ -55,7 +55,7 @@ for i in range(1, cols * rows + 1):
     figure.add_subplot(rows, cols, i)
     label_name = training_data.classes[label]
     
-    # Only show title on first row
+    # only show title on first row
     if row == 0:
         plt.title(label_name, fontsize=8)
     
